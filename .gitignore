@@ -1,5 +1,6 @@
 bin/*.o
 bin/sfetool
+bin/test*
 .vscode
 *.log
 *.enc
