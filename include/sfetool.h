@@ -12,6 +12,12 @@ typedef enum {
     LOAD_USERS_DATA_FORMAT_ERROR = -3,
 } LoadUsersError;
 
+typedef enum {
+    SAVE_USERS_SUCCESS = 0,
+    SAVE_USERS_FILE_OPEN_ERROR = -1,
+    SAVE_USERS_UNABLE_TO_WRITE = -2
+} SaveUserError;
+
 
 /**
  * loadUsers - Loads user data from a file and populates an array of User structs.
@@ -45,4 +51,28 @@ typedef enum {
  *   and close the file before returning an error code.
  */
 int loadUsers(User **users, size_t *usersSize);
+
+/**
+ * saveUser - Appends a single user to the users file.
+ * 
+ * This function writes a user's data to a file specified by the USERS_FILE macro. 
+ * The user's information is stored in the following format:
+ * 
+ *     UUID|name|email|password|createdAt|updatedAt
+ * 
+ * The fields are separated by '|' characters. The UUID is written as a string (not binary),
+ * and the UNIX timestamps for `createdAt` and `updatedAt` are stored as long integers.
+ * 
+ * The file is opened in append mode (`"a"`), meaning the user's data will be added to the 
+ * end of the file. If the file does not exist, it will be created.
+ * 
+ * @param user  The User struct whose data is to be saved to the file.
+ * 
+ * @return int  Returns `SAVE_USERS_SUCCESS` if the user data was successfully written 
+ *              to the file, or a negative error code on failure:
+ *              - `SAVE_USERS_FILE_OPEN_ERROR`: Failed to open the users file for appending.
+ *              - `SAVE_USERS_UNABLE_TO_WRITE`: Failed to write user data to the file.
+ * 
+ **/
+int saveUser(User user);
 #endif
