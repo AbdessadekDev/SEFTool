@@ -21,6 +21,6 @@ run:
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(OBJ)
+	rm -f $(TARGET) $(OBJ) bin/test*
 
 .PHONY: run clean
