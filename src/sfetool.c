@@ -73,3 +73,23 @@ int loadUsers(User **users, size_t *usersSize) {
     fclose(pUsersFile);
     return LOAD_USERS_SUCCESS;
 }
+
+int saveUser(User user) {
+    FILE *pUserFile = fopen(USERS_FILE, "a");
+    if (pUserFile == NULL) return SAVE_USERS_FILE_OPEN_ERROR;
+    if (fprintf(
+            pUserFile,
+            "%s|%s|%s|%s|%ld|%ld\n",
+            user.id,
+            user.name,
+            user.email,
+            user.password,
+            user.createdAt,
+            user.updatedAt
+         ) != 6) {
+            fclose(pUserFile);
+            return SAVE_USERS_UNABLE_TO_WRITE;
+        }
+    fclose(pUserFile);
+    return SAVE_USERS_SUCCESS;
+}
