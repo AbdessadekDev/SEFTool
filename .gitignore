@@ -5,3 +5,5 @@ bin/test*
 *.log
 *.enc
 .env
+data/*.dat
+data/*.log
