@@ -32,29 +32,25 @@ int loadUsers(User **users, size_t *usersSize) {
     // Read each user record
     size_t index = 0;
     while (fgets(buffer, USER_INFO_MAX, pUsersFile) && index < *usersSize) {
-        char userIdStr[37];  // UUID string is 36 chars + null terminator
+        char userId[USER_ID_MAX];
         char name[USER_NAME_MAX];
         char email[USER_EMAIL_MAX];
         char password[USER_PASSWORD_MAX];
         time_t createdAt;
         time_t updatedAt;
 
-        // Read each field, expecting the UUID to be in string format
-        int matched = sscanf(buffer, "%36s|%s|%s|%s|%ld|%ld\n", userIdStr, name, email, password, &createdAt, &updatedAt);
+        // Read each field,
+        int matched = sscanf(buffer, "%s|%s|%s|%s|%ld|%ld\n", userId, name, email, password, &createdAt, &updatedAt);
         if (matched != 6) {
             fclose(pUsersFile);
             free(*users);
             return LOAD_USERS_DATA_FORMAT_ERROR;
         }
 
-        // Convert the UUID string to binary format and store it in the user struct
-        if (uuid_parse(userIdStr, (*users)[index].id) != 0) {
-            fclose(pUsersFile);
-            free(*users);
-            return LOAD_USERS_DATA_FORMAT_ERROR;
-        }
+        // Copy fields
+        strncpy((*users)[index].id, userId, USER_ID_MAX);
+        (*users)[index].id[USER_ID_MAX - 1] = '\0';
 
-        // Copy other fields
         strncpy((*users)[index].name, name, USER_NAME_MAX);
         (*users)[index].name[USER_NAME_MAX - 1] = '\0';
 
@@ -74,22 +70,13 @@ int loadUsers(User **users, size_t *usersSize) {
     return LOAD_USERS_SUCCESS;
 }
 
-int saveUser(User user) {
+int saveUser(User *user) {
     FILE *pUserFile = fopen(USERS_FILE, "a");
     if (pUserFile == NULL) return SAVE_USERS_FILE_OPEN_ERROR;
-    if (fprintf(
-            pUserFile,
-            "%s|%s|%s|%s|%ld|%ld\n",
-            user.id,
-            user.name,
-            user.email,
-            user.password,
-            user.createdAt,
-            user.updatedAt
-         ) != 6) {
-            fclose(pUserFile);
-            return SAVE_USERS_UNABLE_TO_WRITE;
-        }
+    if (fprintf(pUserFile,"%s|%s|%s|%s|%ld|%ld\n",user->id,user->name,user->email,user->password,user->createdAt,user->updatedAt) != 6) {
+        fclose(pUserFile);
+        return SAVE_USERS_UNABLE_TO_WRITE;
+    }
     fclose(pUserFile);
     return SAVE_USERS_SUCCESS;
 }
