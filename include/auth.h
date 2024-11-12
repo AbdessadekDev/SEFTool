@@ -7,7 +7,7 @@
 #define USER_EMAIL_MAX 100
 #define USER_PASSWORD_MAX 65
 
-typedef struct User {
+typedef struct {
     uuid_t id;
     char name[USER_NAME_MAX];
     char email[USER_EMAIL_MAX];
