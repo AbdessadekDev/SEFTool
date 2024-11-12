@@ -15,6 +15,7 @@
  * - `MISSING_SPECIAL`: Input lacks a special character (for passwords).
  * - `NON_DIGIT_FOUND`: Input contains non-numeric characters.
  * - `NON_ALPHA_FOUND`: Input contains non-alphabetic characters.
+ * - `NON_ALPHANUMERIC_FOUND` : Input contains non-numeric and non-alphabetic characters.
  * - `REGEX_COMPILATION_FAILED`: An error occurred while compiling a regular expression.
  * - `EMAIL_FORMAT_INVALID`: Input does not match expected email format.
  * - `NULL_INPUT`: Input is NULL.
@@ -30,6 +31,7 @@ typedef enum {
     MISSING_SPECIAL,
     NON_DIGIT_FOUND,
     NON_ALPHA_FOUND,
+    NON_ALPHANUMERIC_FOUND,
     REGEX_COMPILATION_FAILED,
     EMAIL_FORMAT_INVALID,
 } ValidationResult;
@@ -125,6 +127,15 @@ ValidationResult isEmail(char *input, void *param);
  * @return `VALID` if all password criteria are met; specific code (e.g., `MISSING_UPPERCASE`) or `NULL_INPUT` otherwise.
  */
 ValidationResult isPassword(char *input, void *param);
+
+/**
+ * @brief Validates that the input contains alphabetic and numeric characters.
+ * 
+ * @param input The string to validate.
+ * @param param Unused; pass NULL.
+ * @return `VALID` if input contains only alphabetic characters; `NON_ALPHANUMERIC_FOUND` or `NULL_INPUT` otherwise.
+ */
+ValidationResult isAlphaNumeric(char *input, void *param);
 
 /**
  * @brief Validates input based on an array of validation rules.
