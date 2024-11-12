@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <regex.h>
 #include <stdio.h>
+#include <string.h>
 #include "validation_utils.h"
 
 
@@ -22,6 +23,7 @@ ValidationResult maxLength(char *input, void *param) {
 }
 
 ValidationResult isDigit(char *input, void *param) {
+    if (input == NULL) return NULL_INPUT;
     (void)param; // Unused variable
     for (int i = 0; input[i] != '\0'; i++) {
         if (!isdigit((unsigned char)input[i])) {
@@ -32,6 +34,7 @@ ValidationResult isDigit(char *input, void *param) {
 }
 
 ValidationResult isAlpha(char *input, void *param) {
+    if (input == NULL) return NULL_INPUT;
     (void)param; // Unused variable
     for (int i = 0; input[i] != '\0'; i++) {
         if (!isalpha((unsigned char)input[i])) {
@@ -42,6 +45,7 @@ ValidationResult isAlpha(char *input, void *param) {
 }
 
 ValidationResult isEmail(char *input, void *param) {
+    if (input == NULL) return NULL_INPUT;
     (void)param;  // Unused parameter
     const char *pattern = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
     regex_t regex;
@@ -65,8 +69,8 @@ ValidationResult isEmail(char *input, void *param) {
 }
 
 ValidationResult isPassword(char *input, void *param) {
+    if (input == NULL) return NULL_INPUT;
     (void)param;  // Unused parameter
-
     int length = strlen(input);
     bool hasUpper = false;
     bool hasLower = false;
@@ -93,6 +97,17 @@ ValidationResult isPassword(char *input, void *param) {
     if (!hasSpecial) return MISSING_SPECIAL;
 
     // Return true if all conditions are met, false otherwise
+    return VALID;
+}
+
+ValidationResult isAlphaNumeric(char *input, void *param) {
+    if (input == NULL) return NULL_INPUT;
+    (void)param; // Unused variable
+    for (int i = 0; input[i] != '\0'; i++) {
+        if (!isalpha((unsigned char)input[i]) && !isdigit((unsigned char)input[i])) {
+            return NON_ALPHANUMERIC_FOUND;
+        }
+    }
     return VALID;
 }
 
