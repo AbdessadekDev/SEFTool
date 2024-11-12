@@ -74,5 +74,5 @@ int loadUsers(User **users, size_t *usersSize);
  *              - `SAVE_USERS_UNABLE_TO_WRITE`: Failed to write user data to the file.
  * 
  **/
-int saveUser(User user);
+int saveUser(User *user);
 #endif
