@@ -1,6 +1,8 @@
 // standards
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
+#include <errno.h>
 
 // openssl
 #include <openssl/evp.h>
@@ -46,5 +48,53 @@ void hexToBytes(const char *hex, unsigned char **bytes, size_t *length) {
 
     for (size_t i = 0; i < *length; i++) {
         sscanf(hex + (i * 2), "%2hhx", &(*bytes)[i]);  // Convert each pair of hex characters to a byte
+    }
+}
+
+bool isFileExists(char *fileName) {
+    FILE *file = fopen(fileName, "r");
+    if (file == NULL) {
+        if (errno == 2) return false;
+        return true;
+    }
+    fclose(file);
+    return true;
+}
+
+int countLines(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) return -1;
+    int count = 0;
+    char buffer[300];
+    while(fgets(buffer, 300, file)) count++;
+    fclose(file);
+    return count;
+}
+
+int writeLines(const char *fileName, unsigned char **lines, int *lineLengths, int linesSize) {
+    FILE *file = fopen(fileName, "wb");
+    if (file == NULL) return -33;
+
+    for (int index = 0; index < linesSize; index++) {
+        if (fwrite(lines[index], 1, lineLengths[index], file) != lineLengths[index]) {
+            fclose(file);
+            return -34;
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
+
+void removeEncExtension(const char *fileName, char *outputFile) {
+    // Copy the original file name to outputFile
+    strcpy(outputFile, fileName);
+
+    // Find the last occurrence of ".enc" in outputFile
+    char *extension = strstr(outputFile, ".enc");
+
+    // If ".enc" is found at the end, replace it with a null terminator
+    if (extension && strcmp(extension, ".enc") == 0) {
+        *extension = '\0'; // Remove the ".enc" extension
     }
 }
