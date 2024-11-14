@@ -1,268 +1,194 @@
-// standard headers
 #include <stdio.h>
 #include <stdlib.h>
-#include <uuid/uuid.h>
-#include <time.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-
-
-#include "auth.h"
 #include "sfetool.h"
-#include "utils.h"
 
+// Load user data from file and populate the users array
 int loadUsers(User **users, size_t *usersSize) {
-    char buffer[USER_INFO_MAX];
+    FILE *file = fopen(USERS_FILE, "rb");
+    if (!file) return LOAD_USERS_FILE_OPEN_ERROR;
 
-    FILE *pUsersFile = fopen(USERS_FILE, "r");
-    if (pUsersFile == NULL) return LOAD_USERS_FILE_OPEN_ERROR;
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    rewind(file);
 
-    // Count lines to determine number of users
-    size_t count = 0;
-    while (fgets(buffer, USER_INFO_MAX, pUsersFile)) {
-        count++;
+    if (fileSize % sizeof(User) != 0) {
+        fclose(file);
+        return LOAD_USERS_DATA_FORMAT_ERROR;
     }
-    fseek(pUsersFile, 0, SEEK_SET);
 
-    *users = malloc(count * sizeof(User));
-    if (*users == NULL) {
-        fclose(pUsersFile);
+    *usersSize = fileSize / sizeof(User);
+    *users = malloc(fileSize);
+    if (!*users) {
+        fclose(file);
         return LOAD_USERS_MEMORY_ALLOCATION_ERROR;
     }
-    *usersSize = count;
 
-    // Read each user record
-    size_t index = 0;
-    while (fgets(buffer, USER_INFO_MAX, pUsersFile) && index < *usersSize) {
-        char userId[USER_ID_MAX];
-        char name[USER_NAME_MAX];
-        char email[USER_EMAIL_MAX];
-        char password[USER_PASSWORD_MAX];
-        time_t createdAt;
-        time_t updatedAt;
-
-        // Read each field,
-        int matched = sscanf(buffer, "%s|%s|%s|%s|%ld|%ld\n", userId, name, email, password, &createdAt, &updatedAt);
-        if (matched != 6) {
-            fclose(pUsersFile);
-            free(*users);
-            return LOAD_USERS_DATA_FORMAT_ERROR;
-        }
-
-        // Copy fields
-        strncpy((*users)[index].id, userId, USER_ID_MAX);
-        (*users)[index].id[USER_ID_MAX - 1] = '\0';
-
-        strncpy((*users)[index].name, name, USER_NAME_MAX);
-        (*users)[index].name[USER_NAME_MAX - 1] = '\0';
-
-        strncpy((*users)[index].email, email, USER_EMAIL_MAX);
-        (*users)[index].email[USER_EMAIL_MAX - 1] = '\0';
-
-        strncpy((*users)[index].password, password, USER_PASSWORD_MAX);
-        (*users)[index].password[USER_PASSWORD_MAX - 1] = '\0';
-
-        (*users)[index].createdAt = createdAt;
-        (*users)[index].updatedAt = updatedAt;
-
-        index++;
-    }
-
-    fclose(pUsersFile);
+    fread(*users, sizeof(User), *usersSize, file);
+    fclose(file);
     return LOAD_USERS_SUCCESS;
 }
 
+// Append a single user to the users file
 int saveUser(User *user) {
-    if (!isFileExists(USERS_FILE)) {
-        if (mkdir("data",0777) == - 1) return SAVE_USERS_FILE_OPEN_ERROR;
-    }
-    FILE *pUserFile = fopen(USERS_FILE, "a");
-    if (pUserFile == NULL) return SAVE_USERS_FILE_OPEN_ERROR;
-    if (fprintf(pUserFile,"%s|%s|%s|%s|%ld|%ld\n",user->id,user->name,user->email,user->password,user->createdAt,user->updatedAt) < 6) {
-        fclose(pUserFile);
+    FILE *file = fopen(USERS_FILE, "ab");
+    if (!file) return SAVE_USERS_FILE_OPEN_ERROR;
+
+    if (fwrite(user, sizeof(User), 1, file) != 1) {
+        fclose(file);
         return SAVE_USERS_UNABLE_TO_WRITE;
     }
-    fclose(pUserFile);
+
+    fclose(file);
     return SAVE_USERS_SUCCESS;
 }
 
-int encryptFile(const char *filename, unsigned char *key, unsigned char *iv) {
-    FILE *file = fopen(filename, "r+");
-    if (file == NULL) return ENCRYPTFILE_UNABLE_TO_OPEN_FILE;
+// Encrypts a file using AES-128-CBC and outputs it with a .enc extension
+int encryptFile(const char *filename, const unsigned char *key, const unsigned char *iv) {
+    FILE *inputFile = fopen(filename, "rb");
+    if (!inputFile) return ENCRYPTFILE_FILE_ERROR;
 
-    // Initialize encryption context
+    char encFilename[256];
+    snprintf(encFilename, sizeof(encFilename), "%s.enc", filename);
+
+    FILE *outputFile = fopen(encFilename, "wb");
+    if (!outputFile) {
+        fclose(inputFile);
+        return ENCRYPTFILE_FILE_ERROR;
+    }
+
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
-        fclose(file);
-        return ENCRYPTFILE_FIALS_TO_INI_CTX;
+        fclose(inputFile);
+        fclose(outputFile);
+        return ENCRYPTFILE_CONTEXT_ERROR;
     }
 
-    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv)) {
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1) {
         EVP_CIPHER_CTX_free(ctx);
-        fclose(file);
-        return ENCRYPTFILE_FIALS_TO_INI_ENC;
+        fclose(inputFile);
+        fclose(outputFile);
+        return ENCRYPTFILE_CONTEXT_ERROR;
     }
 
-    unsigned char buffer[USER_INFO_MAX];
-    int encryptedLinesLen = countLines(filename);
-    if (encryptedLinesLen <= 0) {
+    unsigned char buffer[1024];
+    unsigned char cipherText[1024 + EVP_CIPHER_block_size(EVP_aes_128_cbc())];
+    int bytesRead, cipherTextLen;
+
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), inputFile)) > 0) {
+        if (EVP_EncryptUpdate(ctx, cipherText, &cipherTextLen, buffer, bytesRead) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            fclose(inputFile);
+            fclose(outputFile);
+            return ENCRYPTFILE_ENCRYPTION_ERROR;
+        }
+        fwrite(cipherText, 1, cipherTextLen, outputFile);
+    }
+
+    if (EVP_EncryptFinal_ex(ctx, cipherText, &cipherTextLen) != 1) {
         EVP_CIPHER_CTX_free(ctx);
-        fclose(file);
-        return ENCRYPTFILE_UNABLE_TO_OPEN_FILE_COUNT;
+        fclose(inputFile);
+        fclose(outputFile);
+        return ENCRYPTFILE_ENCRYPTION_ERROR;
     }
-
-    unsigned char **encryptedLines = malloc(encryptedLinesLen * sizeof(unsigned char*));
-    int *encryptedLengths = malloc(encryptedLinesLen * sizeof(int)); // Track each encrypted line's length
-    if (encryptedLines == NULL || encryptedLengths == NULL) {
-        EVP_CIPHER_CTX_free(ctx);
-        fclose(file);
-        free(encryptedLines);
-        free(encryptedLengths);
-        return ENCRYPTFILE_MEMORY_ALLOCATION_ERR;
-    }
-
-    int index = 0;
-    while (fgets((char*)buffer, USER_INFO_MAX, file)) {
-        int outlen1, outlen2;
-        encryptedLines[index] = malloc(USER_INFO_MAX + EVP_CIPHER_block_size(EVP_aes_128_cbc()));
-        if (encryptedLines[index] == NULL) {
-            for (int i = 0; i < index; i++) free(encryptedLines[i]);
-            free(encryptedLines);
-            free(encryptedLengths);
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(file);
-            return ENCRYPTFILE_MEMORY_ALLOCATION_ERR;
-        }
-
-        // Encrypt the current line
-        if (1 != EVP_EncryptUpdate(ctx, encryptedLines[index], &outlen1, buffer, strlen((char*)buffer))) {
-            for (int i = 0; i <= index; i++) free(encryptedLines[i]);
-            free(encryptedLines);
-            free(encryptedLengths);
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(file);
-            return ENCRYPTFILE_ENCRYPTION_ERR;
-        }
-
-        if (1 != EVP_EncryptFinal_ex(ctx, encryptedLines[index] + outlen1, &outlen2)) {
-            for (int i = 0; i <= index; i++) free(encryptedLines[i]);
-            free(encryptedLines);
-            free(encryptedLengths);
-            EVP_CIPHER_CTX_free(ctx);
-            fclose(file);
-            return ENCRYPTFILE_ENCRYPTION_ERR;
-        }
-
-        encryptedLengths[index] = outlen1 + outlen2; // Store encrypted length
-        index++;
-    }
+    fwrite(cipherText, 1, cipherTextLen, outputFile);
 
     EVP_CIPHER_CTX_free(ctx);
-    fclose(file);
+    fclose(inputFile);
+    fclose(outputFile);
 
-    // Write encrypted lines to a new file
-    int fileNameEncLen = snprintf(NULL, 0, "%s.enc", filename) + 1;
-    char *fileNameEnc = malloc(fileNameEncLen);
-    snprintf(fileNameEnc, fileNameEncLen, "%s.enc", filename);
+    // Optionally, remove the original file after successful encryption
+    if (remove(filename) != 0) return ENCRYPTFILE_FILE_REPLACEMENT_ERROR;
 
-    if (writeLines(fileNameEnc, encryptedLines, encryptedLengths, encryptedLinesLen) != 0) {
-        for (int i = 0; i < encryptedLinesLen; i++) free(encryptedLines[i]);
-        free(encryptedLines);
-        free(encryptedLengths);
-        free(fileNameEnc);
-        return ENCRYPTFILE_ENCRYPTION_ERR;
-    }
-    if (remove(filename) != 0) return ENCRYPTFILE_UNABLE_TO_REMOVE_ACTUAL_FILE;
-
-    for (int i = 0; i < encryptedLinesLen; i++) free(encryptedLines[i]);
-    free(encryptedLines);
-    free(encryptedLengths);
-    free(fileNameEnc);
     return ENCRYPTFILE_SUCCESS;
 }
 
-int decryptFile(const char *encryptedFileName,unsigned char *key, unsigned char *iv) {
-    FILE *file = fopen(encryptedFileName, "rb");
-    if (file == NULL) return DECRYPTFILE_UNABLE_TO_OPEN_FILE;
-    
-    int len = strlen(encryptedFileName) - 4;
-    char *outputFileName = malloc(len);
-    removeEncExtension(encryptedFileName, outputFileName);
+// Decrypts a .enc file using AES-128-CBC and outputs it without the .enc extension
+int decryptFile(const char *encryptedFileName, const unsigned char *key, const unsigned char *iv) {
+    FILE *inputFile = fopen(encryptedFileName, "rb");
+    if (!inputFile) return DECRYPTFILE_FILE_ERROR;
 
-    FILE *outputFile = fopen(outputFileName, "w");
-    if (outputFile == NULL) {
-        fclose(file);
-        return DECRYPTFILE_UNABLE_TO_OPEN_OUTPUT;
+    char decFilename[256];
+    strncpy(decFilename, encryptedFileName, strlen(encryptedFileName) - 4);
+    decFilename[strlen(encryptedFileName) - 4] = '\0';
+
+    FILE *outputFile = fopen(decFilename, "wb");
+    if (!outputFile) {
+        fclose(inputFile);
+        return DECRYPTFILE_FILE_ERROR;
     }
 
-    // Initialize decryption context
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
-        fclose(file);
+        fclose(inputFile);
         fclose(outputFile);
-        return DECRYPTFILE_FAIL_TO_INIT_CTX;
+        return DECRYPTFILE_CONTEXT_ERROR;
     }
 
-    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv)) {
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv) != 1) {
         EVP_CIPHER_CTX_free(ctx);
-        fclose(file);
+        fclose(inputFile);
         fclose(outputFile);
-        return DECRYPTFILE_FAIL_TO_INIT_DEC;
+        return DECRYPTFILE_CONTEXT_ERROR;
     }
 
-    // Buffer to hold each encrypted line and its decrypted form
-    unsigned char encryptedBuffer[USER_INFO_MAX + EVP_CIPHER_block_size(EVP_aes_128_cbc())];
-    unsigned char decryptedBuffer[USER_INFO_MAX];
-    int decryptedLen = 0, finalLen = 0;
+    unsigned char buffer[1024];
+    unsigned char plainText[1024];
+    int bytesRead, plainTextLen;
 
-    while (!feof(file)) {
-        // Read a line of encrypted data
-        size_t encryptedSize = fread(encryptedBuffer, 1, sizeof(encryptedBuffer), file);
-        if (encryptedSize <= 0) break;
-
-        // Decrypt the current line
-        if (1 != EVP_DecryptUpdate(ctx, decryptedBuffer, &decryptedLen, encryptedBuffer, encryptedSize)) {
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), inputFile)) > 0) {
+        if (EVP_DecryptUpdate(ctx, plainText, &plainTextLen, buffer, bytesRead) != 1) {
             EVP_CIPHER_CTX_free(ctx);
-            fclose(file);
+            fclose(inputFile);
             fclose(outputFile);
-            return DECRYPTFILE_DECRYPTION_ERR;
+            return DECRYPTFILE_DECRYPTION_ERROR;
         }
-
-        // Write decrypted data to output file
-        fwrite(decryptedBuffer, 1, decryptedLen, outputFile);
+        fwrite(plainText, 1, plainTextLen, outputFile);
     }
 
-    // Finalize decryption to handle padding
-    if (1 != EVP_DecryptFinal_ex(ctx, decryptedBuffer, &finalLen)) {
+    if (EVP_DecryptFinal_ex(ctx, plainText, &plainTextLen) != 1) {
         EVP_CIPHER_CTX_free(ctx);
-        fclose(file);
+        fclose(inputFile);
         fclose(outputFile);
-        return DECRYPTFILE_DECRYPTION_ERR;
+        return DECRYPTFILE_DECRYPTION_ERROR;
     }
+    fwrite(plainText, 1, plainTextLen, outputFile);
 
-    // Write any remaining decrypted data to output file
-    fwrite(decryptedBuffer, 1, finalLen, outputFile);
-
-    // Clean up
     EVP_CIPHER_CTX_free(ctx);
-    fclose(file);
+    fclose(inputFile);
     fclose(outputFile);
+
     return DECRYPTFILE_SUCCESS;
 }
 
-void genKey(char *name) {
+void setupKeys() {
     unsigned char key[SFETOOL_KEY_LEN];
-    char hex[SFETOOL_KEY_LEN * 2 + 1];
-    RAND_bytes(key, SFETOOL_KEY_LEN);
-    byteToHex(key, SFETOOL_KEY_LEN, hex);
+    unsigned char iv[SFETOOL_KEY_LEN];
 
-    printf("Generated key for %s:\n", name);
-    printf("Set the following as an environment variable in your system:\n\n");
-    printf("    export SFETOOL_%s=%s\n\n", name, hex);
-    // printf("Instructions:\n");
-    // printf("  - For Linux/macOS, run the above command in your terminal.\n");
-    // printf("  - For Windows, use 'setx SFETOOL_%s \"%s\"' in Command Prompt.\n", name, hex);
-    printf("Note: Restart your terminal or command prompt to ensure the variable is available.\n");
+    if (RAND_bytes(key, sizeof(key)) != 1 || RAND_bytes(iv, sizeof(iv)) != 1) {
+        fprintf(stderr, "Error generating random bytes for key or IV.\n");
+        return;
+    }
+
+    printf("Keys generated successfully.\n");
+    printf("To set up the environment variables, please run the following commands in your terminal:\n");
+    printf("\n");
+
+    printf("\033[0;33mexport\033[0m \033[0;35mSFETOOL_KEY\033[0m=\033[0;32m");
+    for (int i = 0; i < SFETOOL_KEY_LEN; i++) {
+        printf("%02x", key[i]);
+    }
+    printf("\033[0m\n");
+
+    printf("\033[0;33mexport\033[0m \033[0;35mSFETOOL_IV\033[0m=\033[0;32m");
+    for (int i = 0; i < SFETOOL_KEY_LEN; i++) {
+        printf("%02x", iv[i]);
+    }
+    printf("\033[0m\n");
+    printf("\n");
+    printf("Or, add these lines to your .bashrc or .zshrc file to set them permanently.");
+    printf("\n");
+
 }
