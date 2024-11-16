@@ -61,40 +61,25 @@ bool isFileExists(char *fileName) {
     return true;
 }
 
-int countLines(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) return -1;
-    int count = 0;
-    char buffer[300];
-    while(fgets(buffer, 300, file)) count++;
-    fclose(file);
-    return count;
-}
+int addLog(const char *level, const char *message, const char *fileName, const char *file, const char *function) {
+    
+    if (level == NULL ||
+        message == NULL ||
+        fileName == NULL ||
+        file == NULL ||
+        function == NULL
+    ) return -501;
 
-int writeLines(const char *fileName, unsigned char **lines, int *lineLengths, int linesSize) {
-    FILE *file = fopen(fileName, "wb");
-    if (file == NULL) return -33;
+    FILE *logFile = fopen(fileName, "a");
+    if (logFile == NULL) return -500;
 
-    for (int index = 0; index < linesSize; index++) {
-        if (fwrite(lines[index], 1, lineLengths[index], file) != lineLengths[index]) {
-            fclose(file);
-            return -34;
-        }
-    }
-    fclose(file);
+    time_t lt = time(NULL);
+    struct tm *pTm = localtime(&lt);
+
+    fprintf(logFile, "%04d-%02d-%02d %02d:%02d:%02d [%s] (%s:%s) --- %s\n",
+            pTm->tm_year + 1900, pTm->tm_mon + 1, pTm->tm_mday,
+            pTm->tm_hour, pTm->tm_min, pTm->tm_sec, level, file, function, message);
+
+    fclose(logFile);
     return 0;
-}
-
-
-void removeEncExtension(const char *fileName, char *outputFile) {
-    // Copy the original file name to outputFile
-    strcpy(outputFile, fileName);
-
-    // Find the last occurrence of ".enc" in outputFile
-    char *extension = strstr(outputFile, ".enc");
-
-    // If ".enc" is found at the end, replace it with a null terminator
-    if (extension && strcmp(extension, ".enc") == 0) {
-        *extension = '\0'; // Remove the ".enc" extension
-    }
 }
