@@ -1,46 +1,110 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include "sfetool.h"
+#include "utils.h"
 
 // Load user data from file and populate the users array
-int loadUsers(User **users, size_t *usersSize) {
-    FILE *file = fopen(USERS_FILE, "rb");
-    if (!file) return LOAD_USERS_FILE_OPEN_ERROR;
+int loadUsers(User ***users, size_t *usersSize) {
+    char buffer[USER_INFO_MAX];
+    *usersSize = 0; // Initialize usersSize
 
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    rewind(file);
+    FILE *pUsersFile = fopen(USERS_FILE, "r");
+    if (pUsersFile == NULL) return LOAD_USERS_FILE_OPEN_ERROR;
 
-    if (fileSize % sizeof(User) != 0) {
-        fclose(file);
-        return LOAD_USERS_DATA_FORMAT_ERROR;
+    // Count lines to determine number of users
+    size_t count = 0;
+    while (fgets(buffer, USER_INFO_MAX, pUsersFile)) {
+        count++;
     }
+    fseek(pUsersFile, 0, SEEK_SET);
 
-    *usersSize = fileSize / sizeof(User);
-    *users = malloc(fileSize);
-    if (!*users) {
-        fclose(file);
+    User **temp = malloc(count * sizeof(User *)); // Allocate array of pointers
+    if (temp == NULL) {
+        fclose(pUsersFile);
         return LOAD_USERS_MEMORY_ALLOCATION_ERROR;
     }
+    *users = temp;
 
-    fread(*users, sizeof(User), *usersSize, file);
-    fclose(file);
+    size_t index = 0;
+    while (fgets(buffer, USER_INFO_MAX, pUsersFile)) {
+        (*users)[index] = malloc(sizeof(User));
+        if ((*users)[index] == NULL) {
+            fclose(pUsersFile);
+            cleanupUsers(*users, index);
+            return LOAD_USERS_MEMORY_ALLOCATION_ERROR;
+        }
+        memset((*users)[index], 0, sizeof(User));
+
+        char userId[USER_ID_MAX] = {0};
+        char name[USER_NAME_MAX] = {0};
+        char email[USER_EMAIL_MAX] = {0};
+        char password[USER_PASSWORD_MAX] = {0};
+        time_t createdAt;
+        time_t updatedAt;
+
+
+        int matched = sscanf(buffer, "%33[^|]|%50[^|]|%100[^|]|%65[^|]|%ld|%ld", userId, name, email, password, &createdAt, &updatedAt);
+        if (matched != 6) {
+            fclose(pUsersFile);
+            cleanupUsers(*users, index + 1);
+            return LOAD_USERS_DATA_FORMAT_ERROR;
+        }
+
+        strncpy((*users)[index]->id, userId, USER_ID_MAX * 2 + 1);
+        (*users)[index]->id[USER_ID_MAX * 2] = '\0';
+
+        strncpy((*users)[index]->name, name, USER_NAME_MAX);
+        (*users)[index]->name[USER_NAME_MAX - 1] = '\0';
+
+        strncpy((*users)[index]->email, email, USER_EMAIL_MAX);
+        (*users)[index]->email[USER_EMAIL_MAX - 1] = '\0';
+
+        strncpy((*users)[index]->password, password, USER_PASSWORD_MAX * 2 + 1);
+        (*users)[index]->password[USER_PASSWORD_MAX * 2] = '\0';
+
+        (*users)[index]->createdAt = createdAt;
+        (*users)[index]->updatedAt = updatedAt;
+
+        index++;
+    }
+
+    fclose(pUsersFile);
+    *usersSize = index; // Update the actual number of users loaded
     return LOAD_USERS_SUCCESS;
 }
 
+void cleanupUsers(User **users, size_t usersSize) {
+    for (size_t i = 0; i < usersSize; i++) 
+        free(users[i]);
+    free(users);
+    users = NULL;
+}
+
+
 // Append a single user to the users file
 int saveUser(User *user) {
-    FILE *file = fopen(USERS_FILE, "ab");
-    if (!file) return SAVE_USERS_FILE_OPEN_ERROR;
+    if (!isFileExists("data"))
+        if (mkdir("data", 0777) == -1) 
+            return SAVE_USERS_FILE_OPEN_ERROR;
 
-    if (fwrite(user, sizeof(User), 1, file) != 1) {
+    FILE *file = fopen(USERS_FILE, "a");
+    if (!file) return SAVE_USERS_FILE_OPEN_ERROR;
+            
+    if (fprintf(file, "%s|%s|%s|%s|%ld|%ld\n",
+            user->id,
+            user->name,
+            user->email,
+            user->password,
+            user->createdAt,
+            user->updatedAt
+        ) < 6) {
         fclose(file);
         return SAVE_USERS_UNABLE_TO_WRITE;
     }
-
     fclose(file);
     return SAVE_USERS_SUCCESS;
 }
@@ -191,4 +255,23 @@ void setupKeys() {
     printf("Or, add these lines to your .bashrc or .zshrc file to set them permanently.");
     printf("\n");
 
+}
+
+int isDuplicatedEmail(const char *email) {
+    size_t usersSize = 0;
+    User **users = NULL;
+    int loadCode = loadUsers(&users, &usersSize);
+    if (loadCode == LOAD_USERS_FILE_OPEN_ERROR) return -1000;
+    if (loadCode == LOAD_USERS_MEMORY_ALLOCATION_ERROR) return -1001;
+    if (loadCode == LOAD_USERS_DATA_FORMAT_ERROR) return -1002;
+
+    for(size_t i=0; i < usersSize; i++){
+        if (strcmp(users[i]->email, email) == 0) {
+            cleanupUsers(users, usersSize);
+            return 1;
+        }
+    }
+    
+    cleanupUsers(users, usersSize);
+    return 0;    
 }
