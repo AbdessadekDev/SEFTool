@@ -52,7 +52,7 @@ typedef enum {
  *                    - LOAD_USERS_MEMORY_ALLOCATION_ERROR
  *                    - LOAD_USERS_DATA_FORMAT_ERROR
  */
-int loadUsers(User **users, size_t *usersSize);
+int loadUsers(User ***users, size_t *usersSize);
 
 /**
  * Appends a single user to the users file.
@@ -113,5 +113,17 @@ int decryptFile(const char *encryptedFileName, const unsigned char *key, const u
  *   export SFETOOL_IV=<generated_iv>
  */
 void setupKeys();
+
+/**
+ * @brief Check if the given email exists in USERS_FILE.
+ * 
+ * @param email the email looking for
+ * 
+ * @return 
+ *          - 1 if the email is already exists.
+ *          - 0 if the email isn't exists.
+ *          - a nigative number if an error occur during load users.
+ */
+int isDuplicatedEmail(const char *email);
 
 #endif
