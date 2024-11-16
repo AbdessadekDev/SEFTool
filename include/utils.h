@@ -37,34 +37,16 @@ void hexToBytes(const char *hex, unsigned char **bytes, size_t *length);
  */
 bool isFileExists(char *fileName);
 
-/**
- * @brief Counts the number of lines in a file.
- *
- * @param filename The name of the file to count lines in.
- * @return The number of lines in the file, or -1 if the file cannot be opened.
- */
-int countLines(const char *filename);
 
 /**
- * @brief Writes an array of encrypted lines to a binary file.
- *
- * @param fileName The name of the file to write to.
- * @param lines A 2D array of encrypted lines to be written to the file.
- * @param lineLengths An array containing the length of each line in `lines`.
- * @param linesSize The number of lines to write.
- * @return 0 if writing is successful, or an error code (-33 if the file cannot be opened, 
- *         -34 if there is a write error).
+ * @brief Add a log message to a given file log, at the current time.
+ * 
+ * @param level Just like a string alert or like the type of the message, (e.g. INFO, WORNING...)
+ * @param message the message of log.
+ * @param fileName the name the log file.
+ * @param file the name of the file where call this function. (e.g. __FILE__).
+ * @param function the name of the function where this function is called.
  */
-int writeLines(const char *fileName, unsigned char **lines, int *lineLengths, int linesSize);
-
-
-/**
- * @brief Removes the ".enc" extension from a filename.
- *
- * @param fileName The original file name with the ".enc" extension.
- * @param outputFile The output buffer to store the filename without the ".enc" extension.
- */
-void removeEncExtension(const char *fileName, char *outputFile);
-
+int addLog(const char *level, const char *message, const char *fileName, const char *file, const char *function);
 
 #endif /* UTILS_H */
