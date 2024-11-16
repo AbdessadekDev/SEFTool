@@ -3,10 +3,10 @@
 #ifndef AUTH_H
 #define AUTH_H
 
-#define USER_ID_MAX 20
+#define USER_ID_MAX 16
 #define USER_NAME_MAX 50
 #define USER_EMAIL_MAX 100
-#define USER_PASSWORD_MAX 65
+#define USER_PASSWORD_MAX 32
 
 typedef enum {
     REGISTER_SUCCESS = 0,
@@ -24,15 +24,16 @@ typedef enum {
     REGISTER_MISSING_UPPERCASE_PASS = -111,
     REGISTER_MISSING_SPECIAL_PASS = -112,
     REGISTER_USERS_FILE_OPEN_ERROR = -113,
-    REGISTER_USERS_UNABLE_TO_WRITE = -114
+    REGISTER_USERS_UNABLE_TO_WRITE = -114,
+    REGISTER_USERS_DUPLICATED_EMAIL = -114
 
 } RegisterUserCode;
 
 typedef struct {
-    char id[USER_ID_MAX];
+    char id[USER_ID_MAX * 2 + 1];
     char name[USER_NAME_MAX];
     char email[USER_EMAIL_MAX];
-    char password[USER_PASSWORD_MAX];
+    char password[USER_PASSWORD_MAX * 2 + 1];
     time_t createdAt;
     time_t updatedAt;
 } User;
