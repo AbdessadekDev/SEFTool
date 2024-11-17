@@ -29,6 +29,16 @@ typedef enum {
 
 } RegisterUserCode;
 
+typedef enum {
+    LOGIN_SUCCESS,
+    LOGIN_NULL_INPUT,
+    LOGIN_HASH_PASSWORD_ERR,
+    LOGIN_MEMORY_ERR,
+    LOGIN_FILE_ERR,
+    LOGIN_DATA_FORMAT_ERR,
+    LOGIN_INVALID_CREDENTIALS
+} LoginUserCode;
+
 typedef struct {
     char id[USER_ID_MAX * 2 + 1];
     char name[USER_NAME_MAX];
@@ -48,5 +58,18 @@ typedef struct {
  * @return                0 on success, or a negative error code on failure.
  */
 int registerUser(char *name, char *email, char *password, char *confirmPassword);
+
+/**
+ * Log in a user
+ * 
+ * @param email User's email (input).
+ * @param password User's password  (input).
+ * 
+ * @return 0 on success, or a nigative error code on failure.
+ */
+int loginUser(const char *email, const char *password);
+
+
+void cleanupUsers(User **users, size_t usersSize);
 
 #endif
