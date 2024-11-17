@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 #include "sfetool.h"
 #include "utils.h"
 
@@ -227,6 +228,71 @@ int decryptFile(const char *encryptedFileName, const unsigned char *key, const u
     return DECRYPTFILE_SUCCESS;
 }
 
+int encrypt(unsigned char *input, int inputLength, unsigned char *output, unsigned char *key, unsigned char *iv) {
+    EVP_CIPHER_CTX *ctx;
+    int outputLength1 = 0, outputLength2 = 0;
+
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new())) return ENCRYPT_INIT_CXT_ERR;
+
+    // Initialize encryption operation
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_INIT_ENCRYPTION;
+    }
+
+    // Provide the data to be encrypted
+    if (1 != EVP_EncryptUpdate(ctx, output, &outputLength1, input, inputLength)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_UPDATE_ENCRYPTION;
+    }
+    outputLength2 = outputLength1;
+
+    // Finalize encryption
+    if (1 != EVP_EncryptFinal_ex(ctx, output + outputLength1, &outputLength1)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_FINAL_ENCRYPTION;
+    }
+    outputLength2 += outputLength1;
+
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+    return outputLength2;
+}
+
+int decrypt(unsigned char *input, int inputLength, unsigned char *output, unsigned char *key, unsigned char *iv) {
+    EVP_CIPHER_CTX *ctx;
+    int outputLength1 = 0, outputLength2 = 0;
+
+    // Create and initialize the context
+    if (!(ctx = EVP_CIPHER_CTX_new())) return ENCRYPT_INIT_CXT_ERR;
+
+    // Initialize decryption operation
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_INIT_ENCRYPTION;
+    }
+
+    // Provide the data to be decrypted
+    if (1 != EVP_DecryptUpdate(ctx, output, &outputLength1, input, inputLength)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_UPDATE_ENCRYPTION;
+    }
+    outputLength2 = outputLength1;
+
+    // Finalize decryption
+    if (1 != EVP_DecryptFinal_ex(ctx, output + outputLength1, &outputLength1)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return ENCRYPT_FINAL_ENCRYPTION;
+    }
+    outputLength2 += outputLength1;
+
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+    return outputLength2;
+}
+
+
 void setupKeys() {
     unsigned char key[SFETOOL_KEY_LEN];
     unsigned char iv[SFETOOL_KEY_LEN];
@@ -257,7 +323,7 @@ void setupKeys() {
 
 }
 
-int isDuplicatedEmail(const char *email) {
+int isEmailExists(const char *email) {
     size_t usersSize = 0;
     User **users = NULL;
     int loadCode = loadUsers(&users, &usersSize);
@@ -274,4 +340,273 @@ int isDuplicatedEmail(const char *email) {
     
     cleanupUsers(users, usersSize);
     return 0;    
+}
+
+
+// Get the informations of a user
+User *getUserInfo(const char *email) {
+    User **users = NULL;
+    size_t usersSize = 0;
+    int loadCode = loadUsers(&users, &usersSize);
+    if (loadCode == LOAD_USERS_MEMORY_ALLOCATION_ERROR) return NULL;
+    if (loadCode == LOAD_USERS_FILE_OPEN_ERROR) return NULL;
+    if (loadCode == LOAD_USERS_DATA_FORMAT_ERROR) return NULL;
+
+    User *user = NULL;
+
+    for (size_t index = 0; index < usersSize; index++) {
+        if (strcmp(users[index]->email, email) == 0) {
+            user = malloc(sizeof(User));
+
+            strncpy(user->id, users[index]->id, USER_ID_MAX * 2 + 1);
+            user->id[USER_ID_MAX * 2] = '\0';
+
+            strncpy(user->name, users[index]->name, USER_NAME_MAX);
+            user->name[USER_NAME_MAX - 1] = '\0';
+
+            strncpy(user->email, users[index]->email, USER_EMAIL_MAX);
+            user->email[USER_EMAIL_MAX - 1] = '\0';
+
+            strncpy(user->password, users[index]->password, USER_PASSWORD_MAX * 2 + 1);
+            user->password[USER_PASSWORD_MAX * 2] = '\0';
+
+            user->createdAt = users[index]->createdAt;
+            user->updatedAt = users[index]->updatedAt;
+        }
+    }
+
+    cleanupUsers(users, usersSize);
+    return user;
+}
+
+// Function to create token `email|timestamp`
+unsigned char* createToken(const char* email, size_t* tokenLength) {
+    time_t sessionStartAt = time(NULL);
+    *tokenLength = USER_EMAIL_MAX + 21;  // Email + "|" + timestamp + null terminator
+    unsigned char *token = malloc(*tokenLength);
+    if (!token) return NULL;
+
+    snprintf((char*)token, *tokenLength, "%s|%ld", email, sessionStartAt);
+    return token;
+}
+
+// Function to get the encryption key and IV
+int getEncryptionKeyAndIv(unsigned char** key, unsigned char** iv) {
+    char* sfetoolKey = getenv("SFETOOL_KEY");
+    char* sfetoolIv = getenv("SFETOOL_IV");
+
+    if (!sfetoolKey || !sfetoolIv) {
+        return ERR_SFETOOL_KEY_OR_IV_MISSING;
+    }
+
+    *key = malloc(16);
+    *iv = malloc(16);
+
+    if (!(*key) || !(*iv)) {
+        return ERR_KEY_IV_ALLOCATION_FAILED;
+    }
+
+    size_t keyByteLen, ivByteLen;
+    hexToBytes(sfetoolKey, key, &keyByteLen);
+    hexToBytes(sfetoolIv, iv, &ivByteLen);
+
+    return SUCCESS;
+}
+
+int createSession(const char *email) {
+    FILE *loginFile = fopen(LOGIN_FILE, "wb");
+    if (loginFile == NULL) return ERR_FILE_OPEN_FAILED;
+
+    size_t tokenLength;
+    unsigned char *token = createToken(email, &tokenLength);
+    if (!token) {
+        fclose(loginFile);
+        return ERR_TOKEN_CREATION_FAILED;
+    }
+
+    unsigned char *key = NULL, *iv = NULL;
+    int status = getEncryptionKeyAndIv(&key, &iv);
+    if (status != SUCCESS) {
+        free(token);
+        fclose(loginFile);
+        return status;
+    }
+
+    size_t bufferLength = tokenLength + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    unsigned char *buffer = malloc(bufferLength);
+    if (!buffer) {
+        free(token);
+        free(key);
+        free(iv);
+        fclose(loginFile);
+        return ERR_MEMORY_ALLOCATION_FAILED;
+    }
+
+    encrypt(token, tokenLength, buffer, key, iv);
+
+    if (fwrite(buffer, 1, bufferLength, loginFile) < bufferLength) {
+        free(buffer);
+        free(token);
+        free(key);
+        free(iv);
+        fclose(loginFile);
+        return ERR_ENCRYPTION_FAILED;
+    }
+
+    free(buffer);
+    free(token);
+    free(key);
+    free(iv);
+    fclose(loginFile);
+    return SUCCESS;
+}
+
+// Function to validate session duration
+int validateSession(unsigned char* token) {
+    char email[USER_EMAIL_MAX] = {0};
+    time_t timeExp = 0;
+    sscanf((char*)token, "%[^|]|%ld", email, &timeExp);
+
+    double sessionDuration = difftime(time(NULL), timeExp);
+
+    return (sessionDuration <= 30) ? SUCCESS : ERR_SFETOOL_KEY_OR_IV_MISSING;  // Reusing error code for session timeout
+}
+
+// Refactored checkSession function
+int checkSession() {
+    FILE *loginFile = fopen(LOGIN_FILE, "rb");
+    if (loginFile == NULL) return ERR_FILE_OPEN_FAILED;
+
+    unsigned char *key = NULL, *iv = NULL;
+    int status = getEncryptionKeyAndIv(&key, &iv);
+    if (status != SUCCESS) {
+        fclose(loginFile);
+        return status;
+    }
+
+    size_t bufferLength = USER_EMAIL_MAX + 21 + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    unsigned char *buffer = malloc(bufferLength);
+    if (!buffer) {
+        free(key);
+        free(iv);
+        fclose(loginFile);
+        return ERR_MEMORY_ALLOCATION_FAILED;
+    }
+
+    if (fread(buffer, 1, bufferLength, loginFile) <= 0) {
+        free(buffer);
+        free(key);
+        free(iv);
+        fclose(loginFile);
+        return ERR_FILE_READ_FAILED;
+    }
+
+    unsigned char token[USER_EMAIL_MAX + 21];
+    decrypt(buffer, bufferLength, token, key, iv);
+
+    status = validateSession(token);
+
+    free(buffer);
+    free(key);
+    free(iv);
+    fclose(loginFile);
+
+    return status;
+}
+
+int computeFileHash(const char *filename, unsigned char *hash_out, unsigned int *hash_len) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Unable to open file");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create a digest context
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        perror("Failed to create EVP_MD_CTX");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize the SHA-256 digest
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        perror("EVP_DigestInit_ex failed");
+        EVP_MD_CTX_free(ctx);
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+
+    unsigned char buffer[4096];
+    size_t bytes_read;
+
+    // Read the file and update the hash
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        if (EVP_DigestUpdate(ctx, buffer, bytes_read) != 1) {
+            perror("EVP_DigestUpdate failed");
+            EVP_MD_CTX_free(ctx);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    fclose(file);
+
+    // Finalize the hash
+    if (EVP_DigestFinal_ex(ctx, hash_out, hash_len) != 1) {
+        perror("EVP_DigestFinal_ex failed");
+        EVP_MD_CTX_free(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    // Clean up
+    EVP_MD_CTX_free(ctx);
+}
+
+void printHash(unsigned char *hash, unsigned int hash_length) {
+    for (unsigned int i = 0; i < hash_length; ++i) {
+        printf("%02x", hash[i]);
+    }
+    printf("\n");
+}
+
+int appendToCsv(const char *csvFileName, const char *fileName, const char *hash) {
+    FILE *file = fopen(csvFileName, "a");
+    if (file == NULL) {
+        return FILE_OPEN_ERROR;
+    }
+
+    if (fprintf(file, "%s,%s\n", fileName, hash) < 0) {
+        fclose(file);
+        return FILE_WRITE_ERROR;
+    }
+
+    fclose(file);
+    return SUCCESS;
+}
+
+int readFromCsv(const char *csvFileName, const char *fileName, char *hashBuffer, size_t bufferSize) {
+    FILE *file = fopen(csvFileName, "r");
+    if (file == NULL) {
+        return FILE_OPEN_ERROR;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        char currentFileName[128], currentHash[128];
+        
+        // Parse the line
+        if (sscanf(line, "%127[^,],%127s", currentFileName, currentHash) == 2) {
+            if (strcmp(currentFileName, fileName) == 0) {
+                // Copy the hash to the provided buffer
+                strncpy(hashBuffer, currentHash, bufferSize - 1);
+                hashBuffer[bufferSize - 1] = '\0'; // Ensure null termination
+                fclose(file);
+                return SUCCESS;
+            }
+        }
+    }
+
+    fclose(file);
+    return FILENAME_NOT_FOUND;
 }
