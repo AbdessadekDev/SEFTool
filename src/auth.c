@@ -52,7 +52,7 @@ int registerUser(char *name, char *email, char *password, char *confirmPassword)
     if (validPassword == MISSING_UPPERCASE) return REGISTER_MISSING_UPPERCASE_PASS;
     if (validPassword == MISSING_SPECIAL) return REGISTER_MISSING_SPECIAL_PASS;
     if (strcmp(password, confirmPassword) != 0) return REGISTER_NOT_MATCH_PASS;  // Password match check
-    if (isDuplicatedEmail(email) != 0) return REGISTER_USERS_DUPLICATED_EMAIL;
+    if (isEmailExists(email) != 0) return REGISTER_USERS_DUPLICATED_EMAIL;
 
     // Allocate memory for the new user and hashed password buffers
     User *newUser = malloc(sizeof(User));
@@ -117,4 +117,36 @@ int registerUser(char *name, char *email, char *password, char *confirmPassword)
     free(newUser);
 
     return REGISTER_SUCCESS;
+}
+
+int loginUser(const char *email, const char *password) {
+    if (email == NULL || password == NULL) return LOGIN_NULL_INPUT;
+    
+    unsigned char hashHexPassword[USER_PASSWORD_MAX * 2 + 1];
+    unsigned char hashBytePassword[USER_PASSWORD_MAX];
+    int hashLength = hashPassword((unsigned char*)password, hashBytePassword);
+    if (hashLength < 0 ) return LOGIN_HASH_PASSWORD_ERR;
+
+     // Convert hashed bytes to hex string
+    byteToHex(hashBytePassword, hashLength, (char*)hashHexPassword);
+
+    User *user = getUserInfo(email);
+    if (!user) {
+        free(user);
+        return LOGIN_INVALID_CREDENTIALS;
+    }
+
+    if (strcmp(user->password, (char *)hashHexPassword) != 0) {
+        free(user);
+        return LOGIN_INVALID_CREDENTIALS;
+    } 
+
+    if (createSession(email) != SUCCESS) {
+        free(user);
+        return LOGIN_FILE_ERR;
+    }
+
+    free(user);
+    return LOGIN_SUCCESS;
+    
 }
