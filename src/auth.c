@@ -146,7 +146,15 @@ int loginUser(const char *email, const char *password) {
         return LOGIN_FILE_ERR;
     }
 
+    int msgLength = snprintf(NULL, 0, "%s has been logged in", email);
+    char *msg = malloc(msgLength);
+
+    snprintf(msg, msgLength, "%s has been logged in", email);
+
+    addLog("[INFO]", msg, AUTH_LOG_FILE, __FILE__, __func__ );
+
     free(user);
+    free(msg);
     return LOGIN_SUCCESS;
     
 }

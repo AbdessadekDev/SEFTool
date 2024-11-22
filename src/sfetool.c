@@ -165,7 +165,15 @@ int encryptFile(const char *filename, const unsigned char *key, const unsigned c
     fclose(outputFile);
 
     // Optionally, remove the original file after successful encryption
-    if (remove(filename) != 0) return ENCRYPTFILE_FILE_REPLACEMENT_ERROR;
+    // if (remove(filename) != 0) return ENCRYPTFILE_FILE_REPLACEMENT_ERROR;
+
+    int msgLength = snprintf(NULL, 0, "%s has been encrypted", filename);
+    char *msg = malloc(msgLength);
+
+    snprintf(msg, msgLength, "%s has been encrypted", filename);
+
+    addLog("[INFO]", msg, ENCRYPTION_LOG_FILE, __FILE__, __func__ );
+    free(msg);
 
     return ENCRYPTFILE_SUCCESS;
 }
@@ -208,6 +216,7 @@ int decryptFile(const char *encryptedFileName, const unsigned char *key, const u
             EVP_CIPHER_CTX_free(ctx);
             fclose(inputFile);
             fclose(outputFile);
+            addLog("[ERR]", "DECRYPTFILE_DECRYPTION_ERROR", ENCRYPTION_LOG_FILE,__FILE__, __func__ );
             return DECRYPTFILE_DECRYPTION_ERROR;
         }
         fwrite(plainText, 1, plainTextLen, outputFile);
@@ -224,6 +233,14 @@ int decryptFile(const char *encryptedFileName, const unsigned char *key, const u
     EVP_CIPHER_CTX_free(ctx);
     fclose(inputFile);
     fclose(outputFile);
+
+    int msgLength = snprintf(NULL, 0, "%s has been decrypted", encryptedFileName);
+    char *msg = malloc(msgLength);
+
+    snprintf(msg, msgLength, "%s has been decrypted", encryptedFileName);
+
+    addLog("[INFO]", msg, ENCRYPTION_LOG_FILE, __FILE__, __func__ );
+    free(msg);
 
     return DECRYPTFILE_SUCCESS;
 }
@@ -472,8 +489,8 @@ int validateSession(unsigned char* token) {
     return (sessionDuration <= 30) ? SUCCESS : ERR_SFETOOL_KEY_OR_IV_MISSING;  // Reusing error code for session timeout
 }
 
-// Refactored checkSession function
-int checkSession() {
+// Refactored checkActiveSession function
+int checkActiveSession() {
     FILE *loginFile = fopen(LOGIN_FILE, "rb");
     if (loginFile == NULL) return ERR_FILE_OPEN_FAILED;
 
@@ -517,24 +534,21 @@ int checkSession() {
 int computeFileHash(const char *filename, unsigned char *hash_out, unsigned int *hash_len) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
-        perror("Unable to open file");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     // Create a digest context
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     if (!ctx) {
-        perror("Failed to create EVP_MD_CTX");
         fclose(file);
-        exit(EXIT_FAILURE);
+        return -2;
     }
 
     // Initialize the SHA-256 digest
     if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
-        perror("EVP_DigestInit_ex failed");
         EVP_MD_CTX_free(ctx);
         fclose(file);
-        exit(EXIT_FAILURE);
+        return -3;
     }
 
     unsigned char buffer[4096];
@@ -543,10 +557,9 @@ int computeFileHash(const char *filename, unsigned char *hash_out, unsigned int 
     // Read the file and update the hash
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
         if (EVP_DigestUpdate(ctx, buffer, bytes_read) != 1) {
-            perror("EVP_DigestUpdate failed");
             EVP_MD_CTX_free(ctx);
             fclose(file);
-            exit(EXIT_FAILURE);
+            return -4;
         }
     }
 
@@ -554,13 +567,13 @@ int computeFileHash(const char *filename, unsigned char *hash_out, unsigned int 
 
     // Finalize the hash
     if (EVP_DigestFinal_ex(ctx, hash_out, hash_len) != 1) {
-        perror("EVP_DigestFinal_ex failed");
         EVP_MD_CTX_free(ctx);
-        exit(EXIT_FAILURE);
+        return -5;
     }
 
     // Clean up
     EVP_MD_CTX_free(ctx);
+    return 0;
 }
 
 void printHash(unsigned char *hash, unsigned int hash_length) {
