@@ -6,6 +6,7 @@
 
 #define USERS_FILE "data/users.dat"
 #define LOGIN_FILE "data/login.enc"
+#define ENCRYPTION_LOG_FILE "data/encryption.log"
 #define USER_INFO_MAX 300
 #define SFETOOL_KEY_LEN 16 // AES-128 requires a 16-byte key
 
@@ -63,7 +64,7 @@ typedef enum {
 } StatusCode;
 
 typedef enum {
-    SUCCESS = 0,
+    CSV_SUCCESS = 0,
     FILE_OPEN_ERROR,
     FILE_WRITE_ERROR,
     FILE_READ_ERROR,
@@ -176,9 +177,9 @@ int createSession(const char *email);
 /**
  * Checks if there is an active session.
  * 
- * @return `0` on success, a nigative number where it's fails.
+ * @return `0` on no login session is active, `1` on a session is active, a nigative number where it's fails.
  */
-int checkSession();
+int checkActiveSession();
 
 /**
  * Encrypts the input data using the specified key and initialization vector (IV).
