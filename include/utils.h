@@ -49,4 +49,9 @@ bool isFileExists(char *fileName);
  */
 int addLog(const char *level, const char *message, const char *fileName, const char *file, const char *function);
 
+void handleLoginUser(int result);
+void handleRegisterResult(int result);
+void disableEcho();
+void enableEcho();
+
 #endif /* UTILS_H */
