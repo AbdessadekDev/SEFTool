@@ -158,3 +158,38 @@ int loginUser(const char *email, const char *password) {
     return LOGIN_SUCCESS;
     
 }
+
+
+int changePassword(const char *oldPassword, const char *newPassword) {
+    // Password Roles
+    int minPasswordLen = 8;
+    ValidationRule passRoles[] = {
+        {minLength, &minPasswordLen, TOO_SHORT},
+        {isPassword, NULL, MISSING_DIGIT},
+        {isPassword, NULL, MISSING_LOWERCASE},
+        {isPassword, NULL, MISSING_UPPERCASE},
+        {isPassword, NULL, MISSING_SPECIAL},
+    };
+
+    ValidationResult validPassword = validate(newPassword, passRoles, 5);
+
+    if (validPassword == TOO_SHORT) return REGISTER_TOO_SHORT_PASS;
+    if (validPassword == MISSING_DIGIT) return REGISTER_MISSING_DIGIT_PASS;
+    if (validPassword == MISSING_LOWERCASE) return REGISTER_MISSING_LOWERCASE_PASS;
+    if (validPassword == MISSING_UPPERCASE) return REGISTER_MISSING_UPPERCASE_PASS;
+    if (validPassword == MISSING_SPECIAL) return REGISTER_MISSING_SPECIAL_PASS;
+
+    FILE *loginFile = fopen(LOGIN_FILE, "rb");
+    if (loginFile == NULL) return -2;
+
+    size_t bytesTokenlength = USER_EMAIL_MAX + 21 + EVP_CIPHER_block_size(EVP_aes_128_cbc());
+    unsigned char bytesToken = malloc(bytesTokenlength);
+    unsigned char token[USER_EMAIL_MAX + 21];
+
+    if (fread(token, 1, USER_EMAIL_MAX + 21, loginFile) < 0) {
+        fclose(loginFile);
+        return -6;
+    }
+
+    return 0;
+}
